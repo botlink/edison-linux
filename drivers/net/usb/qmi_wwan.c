@@ -53,6 +53,10 @@ struct qmi_wwan_state {
 	struct usb_interface *data;
 };
 
+enum qmi_wwan_quirks {
+	QMI_WWAN_QUIRK_DTR = 1 << 0,	/* needs "set DTR" request */
+};
+
 /* default ethernet address used by the modem */
 static const u8 default_modem_addr[ETH_ALEN] = {0x02, 0x50, 0xf3};
 
@@ -367,9 +371,14 @@ next_desc:
 	 * clearing out state the clients might need.
 	 *
 	 * MDM9x30 is the first QMI chipset with USB3 support. Abuse
-	 * this fact to enable the quirk.
+	 * this fact to enable the quirk for all USB3 devices.
+	 *
+	 * There are also chipsets with the same "set DTR" requirement
+	 * but without USB3 support.  Devices based on these chips
+	 * need a quirk flag in the device ID table.
 	 */
-	if (le16_to_cpu(dev->udev->descriptor.bcdUSB) >= 0x0201) {
+	if (dev->driver_info->data & QMI_WWAN_QUIRK_DTR ||
+	    le16_to_cpu(dev->udev->descriptor.bcdUSB) >= 0x0201) {
 		qmi_wwan_manage_power(dev, 1);
 		qmi_wwan_change_dtr(dev, true);
 	}
@@ -494,12 +503,27 @@ static const struct driver_info	qmi_wwan_info = {
 	.rx_fixup       = qmi_wwan_rx_fixup,
 };
 
+static const struct driver_info	qmi_wwan_info_quirk_dtr = {
+	.description	= "WWAN/QMI device",
+	.flags		= FLAG_WWAN,
+	.bind		= qmi_wwan_bind,
+	.unbind		= qmi_wwan_unbind,
+	.manage_power	= qmi_wwan_manage_power,
+	.rx_fixup       = qmi_wwan_rx_fixup,
+	.data           = QMI_WWAN_QUIRK_DTR,
+};
+
 #define HUAWEI_VENDOR_ID	0x12D1
 
 /* map QMI/wwan function by a fixed interface number */
 #define QMI_FIXED_INTF(vend, prod, num) \
 	USB_DEVICE_INTERFACE_NUMBER(vend, prod, num), \
 	.driver_info = (unsigned long)&qmi_wwan_info
+
+/* devices requiring "set DTR" quirk */
+#define QMI_QUIRK_SET_DTR(vend, prod, num) \
+	USB_DEVICE_INTERFACE_NUMBER(vend, prod, num), \
+	.driver_info = (unsigned long)&qmi_wwan_info_quirk_dtr
 
 /* Gobi 1000 QMI/wwan interface number is 3 according to qcserial */
 #define QMI_GOBI1K_DEVICE(vend, prod) \
@@ -791,8 +815,8 @@ static const struct usb_device_id products[] = {
 	{QMI_FIXED_INTF(0x1bc7, 0x1201, 2)},	/* Telit LE910 */
 	{QMI_FIXED_INTF(0x1e2d, 0x12d1, 4)},	/* Cinterion PLxx */
 	{QMI_FIXED_INTF(0x05C6, 0x9003, 4) }, /* Quectel UC20 */
-	{QMI_FIXED_INTF(0x2C7C, 0x0125, 4) }, /* Quectel EC25 */
-	{QMI_FIXED_INTF(0x2C7C, 0x0121, 4) }, /* Quectel EC21 */
+	{QMI_QUIRK_SET_DTR(0x2c7c, 0x0125, 4)},	/* Quectel EC25, EC20 R2.0  Mini PCIe */
+	{QMI_QUIRK_SET_DTR(0x2c7c, 0x0121, 4)},	/* Quectel EC21 Mini PCIe */
 	//{QMI_FIXED_INTF(0x05C6, 0x9215, 4) }, /* Quectel EC20 */
 	{QMI_FIXED_INTF(0x2C7C, 0x0191, 4) }, /* Quectel EG91 */
 	{QMI_FIXED_INTF(0x2C7C, 0x0195, 4) }, /* Quectel EG95 */
