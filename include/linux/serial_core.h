@@ -31,6 +31,13 @@
 #include <linux/sysrq.h>
 #include <uapi/linux/serial_core.h>
 
+#ifdef CONFIG_SERIAL_CORE_CONSOLE
+#define uart_console(port) \
+	((port)->cons && (port)->cons->index == (port)->line)
+#else
+#define uart_console(port)      ({ (void)port; 0; })
+#endif
+
 struct uart_port;
 struct serial_struct;
 struct device;
@@ -107,6 +114,7 @@ struct uart_icount {
 };
 
 typedef unsigned int __bitwise__ upf_t;
+typedef unsigned int __bitwise__ upstat_t;
 
 struct uart_port {
 	spinlock_t		lock;			/* port lock */
@@ -121,6 +129,8 @@ struct uart_port {
 	void			(*pm)(struct uart_port *, unsigned int state,
 				      unsigned int old);
 	void			(*handle_break)(struct uart_port *);
+	int			(*rs485_config)(struct uart_port *,
+						struct serial_rs485 *rs485);
 	unsigned int		irq;			/* irq number */
 	unsigned long		irqflags;		/* irq flags  */
 	unsigned int		uartclk;		/* base uart clock */
@@ -130,12 +140,14 @@ struct uart_port {
 	unsigned char		iotype;			/* io access style */
 	unsigned char		unused1;
 
-#define UPIO_PORT		(0)
-#define UPIO_HUB6		(1)
-#define UPIO_MEM		(2)
-#define UPIO_MEM32		(3)
-#define UPIO_AU			(4)			/* Au1x00 and RT288x type IO */
-#define UPIO_TSI		(5)			/* Tsi108/109 type IO */
+#define UPIO_PORT		(SERIAL_IO_PORT)	/* 8b I/O port access */
+#define UPIO_HUB6		(SERIAL_IO_HUB6)	/* Hub6 ISA card */
+#define UPIO_MEM		(SERIAL_IO_MEM)		/* driver-specific */
+#define UPIO_MEM32		(SERIAL_IO_MEM32)	/* 32b little endian */
+#define UPIO_AU			(SERIAL_IO_AU)		/* Au1x00 and RT288x type IO */
+#define UPIO_TSI		(SERIAL_IO_TSI)		/* Tsi108/109 type IO */
+#define UPIO_MEM32BE		(SERIAL_IO_MEM32BE)	/* 32b big endian */
+#define UPIO_MEM16		(SERIAL_IO_MEM16)	/* 16b little endian */
 
 	unsigned int		read_status_mask;	/* driver specific */
 	unsigned int		ignore_status_mask;	/* driver specific */
@@ -182,18 +194,28 @@ struct uart_port {
 #define UPF_CHANGE_MASK		((__force upf_t) (0x17fff))
 #define UPF_USR_MASK		((__force upf_t) (UPF_SPD_MASK|UPF_LOW_LATENCY))
 
+	/* status must be updated while holding port lock */
+	upstat_t		status;
+
+#define UPSTAT_CTS_ENABLE	((__force upstat_t) (1 << 0))
+#define UPSTAT_DCD_ENABLE	((__force upstat_t) (1 << 1))
+
 	unsigned int		mctrl;			/* current modem ctrl settings */
 	unsigned int		timeout;		/* character-based timeout */
 	unsigned int		type;			/* port type */
 	const struct uart_ops	*ops;
 	unsigned int		custom_divisor;
 	unsigned int		line;			/* port index */
+	unsigned int		minor;
 	resource_size_t		mapbase;		/* for ioremap */
 	struct device		*dev;			/* parent device */
 	unsigned char		hub6;			/* this should be in the 8250 driver */
 	unsigned char		suspended;
 	unsigned char		irq_wake;
 	unsigned char		unused[2];
+	struct attribute_group	*attr_group;		/* port specific attributes */
+	const struct attribute_group **tty_groups;	/* all attributes (serial core use only) */
+	struct serial_rs485     rs485;
 	void			*private_data;		/* generic platform data pointer */
 };
 
@@ -280,8 +302,35 @@ static inline int uart_poll_timeout(struct uart_port *port)
 /*
  * Console helpers.
  */
+struct earlycon_device {
+	struct console *con;
+	struct uart_port port;
+	char options[16];		/* e.g., 115200n8 */
+	unsigned int baud;
+};
+
+struct earlycon_id {
+	char	name[16];
+	int	(*setup)(struct earlycon_device *, const char *options);
+};
+
+extern int setup_earlycon(char *buf);
+extern int of_setup_earlycon(unsigned long addr,
+			     int (*setup)(struct earlycon_device *, const char *));
+
+#define EARLYCON_DECLARE(_name, func)					\
+	static const struct earlycon_id __earlycon_##_name		\
+		__used __section(__earlycon_table)			\
+		 = { .name  = __stringify(_name),			\
+		     .setup = func  }
+
+#define OF_EARLYCON_DECLARE(name, compat, fn)				\
+	_OF_DECLARE(earlycon, name, compat, fn, void *)
+
 struct uart_port *uart_get_console(struct uart_port *ports, int nr,
 				   struct console *c);
+int uart_parse_earlycon(char *p, unsigned char *iotype, unsigned long *addr,
+			char **options);
 void uart_parse_options(char *options, int *baud, int *parity, int *bits,
 			int *flow);
 int uart_set_options(struct uart_port *port, struct console *co, int baud,
@@ -321,6 +370,11 @@ static inline int uart_tx_stopped(struct uart_port *port)
 	if(tty->stopped || tty->hw_stopped)
 		return 1;
 	return 0;
+}
+
+static inline bool uart_cts_enabled(struct uart_port *uport)
+{
+	return uport->status & UPSTAT_CTS_ENABLE;
 }
 
 /*
