@@ -714,7 +714,15 @@ static const struct usb_device_id products[] = {
 	{QMI_FIXED_INTF(0x1bc7, 0x1200, 5)},	/* Telit LE920 */
 	{QMI_FIXED_INTF(0x1bc7, 0x1201, 2)},	/* Telit LE910 */
 	{QMI_FIXED_INTF(0x1e2d, 0x12d1, 4)},	/* Cinterion PLxx */
-	{QMI_FIXED_INTF(0x2c7c, 0x0296, 4)},	/* Quectel BG96 */
+	{QMI_FIXED_INTF(0x05C6, 0x9003, 4) }, /* Quectel UC20 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0125, 4) }, /* Quectel EC25 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0121, 4) }, /* Quectel EC21 */
+	//{QMI_FIXED_INTF(0x05C6, 0x9215, 4) }, /* Quectel EC20 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0191, 4) }, /* Quectel EG91 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0195, 4) }, /* Quectel EG95 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0306, 4) }, /* Quectel EG06/EP06/EM06 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0296, 4) }, /* Quectel BG96 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0435, 4) }, /* Quectel AG35 */
 
 	/* 4. Gobi 1000 devices */
 	{QMI_GOBI1K_DEVICE(0x05c6, 0x9212)},	/* Acer Gobi Modem Device */
