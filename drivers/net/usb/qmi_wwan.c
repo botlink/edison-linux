@@ -364,7 +364,8 @@ next_desc:
 			interface_to_usbdev(intf),
 			usb_sndctrlpipe(interface_to_usbdev(intf), 0),
 			0x22, //USB_CDC_REQ_SET_CONTROL_LINE_STATE
-			0x21, //USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE 1, //active CDC DTR
+			0x21, //USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE 
+			1, //active CDC DTR
 			intf->cur_altsetting->desc.bInterfaceNumber,
 			NULL, 0, 100);
 	}
