@@ -56,6 +56,23 @@ struct qmi_wwan_state {
 /* default ethernet address used by the modem */
 static const u8 default_modem_addr[ETH_ALEN] = {0x02, 0x50, 0xf3};
 
+/* Added to support Quectel Cat-M modems */
+struct sk_buff *qmi_wwan_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags) {
+	if (dev->udev->descriptor.idVendor != cpu_to_le16(0x2C7C)) 
+		return skb;
+
+	// Skip Ethernet header from message 
+	if (skb_pull(skb, ETH_HLEN)) {
+		return skb; 
+	} else {
+		dev_err(&dev->intf->dev, "Packet Dropped "); 
+	}
+
+	// Filter the packet out, release it 
+	dev_kfree_skb_any(skb);
+	return NULL;
+}
+
 /* Make up an ethernet header if the packet doesn't have one.
  *
  * A firmware bug common among several devices cause them to send raw
@@ -79,6 +96,11 @@ static const u8 default_modem_addr[ETH_ALEN] = {0x02, 0x50, 0xf3};
 static int qmi_wwan_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 {
 	__be16 proto;
+
+	// TODO: This seems like it will break support for other 
+	// Raw IP QMI WWAN devices
+	if (dev->udev->descriptor.idVendor != cpu_to_le16(0x2C7C)) 
+		return 1;
 
 	/* usbnet rx_complete guarantees that skb->len is at least
 	 * hard_header_len, so we can inspect the dest address without
@@ -332,6 +354,21 @@ next_desc:
 		dev->net->dev_addr[0] &= 0xbf;	/* clear "IP" bit */
 	}
 	dev->net->netdev_ops = &qmi_wwan_netdev_ops;
+
+	// Added to support Quectel
+	if (dev->udev->descriptor.idVendor == cpu_to_le16(0x2C7C)) {
+		dev_info(&intf->dev, "Quectel EC25, EC21, EG91, EG95, EG06, EP06, EM06, BG96, AG35 work on RawIP mode\n");
+		dev->net->flags |= IFF_NOARP;
+	
+		usb_control_msg(
+			interface_to_usbdev(intf),
+			usb_sndctrlpipe(interface_to_usbdev(intf), 0),
+			0x22, //USB_CDC_REQ_SET_CONTROL_LINE_STATE
+			0x21, //USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE 
+			1, //active CDC DTR
+			intf->cur_altsetting->desc.bInterfaceNumber,
+			NULL, 0, 100);
+	}
 err:
 	return status;
 }
@@ -415,6 +452,7 @@ static const struct driver_info	qmi_wwan_info = {
 	.bind		= qmi_wwan_bind,
 	.unbind		= qmi_wwan_unbind,
 	.manage_power	= qmi_wwan_manage_power,
+	.tx_fixup 		= qmi_wwan_tx_fixup,
 	.rx_fixup       = qmi_wwan_rx_fixup,
 };
 
@@ -714,7 +752,15 @@ static const struct usb_device_id products[] = {
 	{QMI_FIXED_INTF(0x1bc7, 0x1200, 5)},	/* Telit LE920 */
 	{QMI_FIXED_INTF(0x1bc7, 0x1201, 2)},	/* Telit LE910 */
 	{QMI_FIXED_INTF(0x1e2d, 0x12d1, 4)},	/* Cinterion PLxx */
-	{QMI_FIXED_INTF(0x2c7c, 0x0296, 4)},	/* Quectel BG96 */
+	{QMI_FIXED_INTF(0x05C6, 0x9003, 4) }, /* Quectel UC20 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0125, 4) }, /* Quectel EC25 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0121, 4) }, /* Quectel EC21 */
+	//{QMI_FIXED_INTF(0x05C6, 0x9215, 4) }, /* Quectel EC20 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0191, 4) }, /* Quectel EG91 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0195, 4) }, /* Quectel EG95 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0306, 4) }, /* Quectel EG06/EP06/EM06 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0296, 4) }, /* Quectel BG96 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0435, 4) }, /* Quectel AG35 */
 
 	/* 4. Gobi 1000 devices */
 	{QMI_GOBI1K_DEVICE(0x05c6, 0x9212)},	/* Acer Gobi Modem Device */
